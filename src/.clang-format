@@ -1,0 +1,23 @@
+# Format Style Options - Created with Clang Power Tools
+---
+BasedOnStyle: Microsoft
+AlignAfterOpenBracket: DontAlign
+AlignEscapedNewlines: DontAlign
+AlignOperands: DontAlign
+AllowAllArgumentsOnNextLine: false
+AlwaysBreakAfterReturnType: All
+BinPackArguments: false
+BraceWrapping: 
+  AfterCaseLabel: true
+BreakBeforeBinaryOperators: All
+BreakBeforeTernaryOperators: false
+ColumnLimit: 190
+ContinuationIndentWidth: 6
+ExperimentalAutoDetectBinPacking: true
+IndentCaseLabels: true
+MaxEmptyLinesToKeep: 2
+ReflowComments: false
+SortIncludes: false
+SpaceBeforeCaseColon: true
+SpaceBeforeParens: Never
+...
