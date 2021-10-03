@@ -46,8 +46,19 @@
 #include "imgui.h"
 #include "imgui_impl_sdl.h"
 
+
+#if defined(_WIN64)
 // SDL
 #include <SDL.h>
+#endif
+
+
+
+#if defined(__linux__)
+// SDL
+#include <sdl/SDL.h>
+#endif
+
 #include <SDL_syswm.h>
 #if defined(__APPLE__)
 #include "TargetConditionals.h"
