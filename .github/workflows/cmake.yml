@@ -27,7 +27,9 @@ jobs:
       run: sudo add-apt-repository ppa:oibaf/graphics-drivers
       run: sudo apt update
       run: sudo apt upgrade
+      
       run: sudo apt-get install libsdl2-dev mesa-common-dev libvulkan1 mesa-vulkan-drivers vulkan-utils 
+      run: sudo ldconfig
 
     - name: Configure CMake
       # Use a bash shell so we can use the same syntax for environment variable
