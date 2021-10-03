@@ -50,6 +50,7 @@
 #if defined(_WIN64)
 // SDL
 #include <SDL.h>
+#include <SDL_syswm.h>
 #endif
 
 
@@ -57,9 +58,10 @@
 #if defined(__linux__)
 // SDL
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_syswm.h>
 #endif
 
-#include <SDL_syswm.h>
+
 #if defined(__APPLE__)
 #include "TargetConditionals.h"
 #endif
