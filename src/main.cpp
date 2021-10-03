@@ -1,13 +1,16 @@
 #include <vk_engine.h>
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+int
+main(int argc, char *argv[])
+{
+    VulkanEngine engine;
 
-int main(int argc, char *argv[]) {
-  VulkanEngine engine;
+    engine.init();
 
-  engine.init();
+    engine.run();
 
-  engine.run();
+    engine.cleanup();
 
-  engine.cleanup();
-
-  return 0;
+    return 0;
 }
