@@ -56,7 +56,7 @@
 
 #if defined(__linux__)
 // SDL
-#include <sdl/SDL.h>
+#include <SDL2/SDL.h>
 #endif
 
 #include <SDL_syswm.h>
