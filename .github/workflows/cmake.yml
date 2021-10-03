@@ -23,12 +23,16 @@ jobs:
       run: cmake -E make_directory ${{github.workspace}}/build
       
 
-    - name: Dependencies
+    - name: Dependencies1
       run: sudo add-apt-repository ppa:oibaf/graphics-drivers
+    - name: Dependencies2
       run: sudo apt update
+    - name: Dependencies3 
       run: sudo apt upgrade
-      
+    
+    - name: Dependencies4
       run: sudo apt-get install libsdl2-dev mesa-common-dev libvulkan1 mesa-vulkan-drivers vulkan-utils 
+    - name: Dependencies5    
       run: sudo ldconfig
 
     - name: Configure CMake
