@@ -3,6 +3,18 @@
 
 #include <SDL.h>
 #include <SDL_vulkan.h>
+#if defined(_WIN64)
+// SDL
+#include <SDL.h>
+#include <SDL_vulkan.h>
+#endif
+
+
+#if defined(__linux__)
+// SDL
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_vulkan.h>
+#endif
 
 #include <vk_initializers.h>
 
