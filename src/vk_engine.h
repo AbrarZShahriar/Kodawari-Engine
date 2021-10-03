@@ -57,6 +57,8 @@ class VulkanEngine
 
     //glm::vec3 camFront = glm::vec3(0.0f, 0.0f, 1.0f);
     glm::vec3 camUp;
+
+
     // --- omitted ---
     VkInstance _instance;                      // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger; // Vulkan debug output handle
@@ -74,7 +76,10 @@ class VulkanEngine
 
     // array of image-views from the swapchain
     std::vector<VkImageView> _swapchainImageViews;
-
+    VkImageView _depthImageView;
+    AllocatedImage _depthImage;
+    //the format for the depth image
+    VkFormat _depthFormat;
     // --- other code ---
     VkQueue _graphicsQueue;        // queue we will submit to
     uint32_t _graphicsQueueFamily; // family of that queue
@@ -93,6 +98,7 @@ class VulkanEngine
 
     VkPipeline _meshPipeline;
     Mesh _triangleMesh;
+    Mesh _monkeyMesh;
 
     // loads a shader module from a spir-v file. Returns false if it errors
     bool
@@ -187,7 +193,7 @@ class PipelineBuilder
     VkPipelineColorBlendAttachmentState _colorBlendAttachment;
     VkPipelineMultisampleStateCreateInfo _multisampling;
     VkPipelineLayout _pipelineLayout;
-
+    VkPipelineDepthStencilStateCreateInfo _depthStencil;
     VkPipeline
     build_pipeline(VkDevice device, VkRenderPass pass);
 };
