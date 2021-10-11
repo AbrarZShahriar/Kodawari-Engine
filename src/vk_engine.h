@@ -4,6 +4,7 @@
 #pragma once
 
 #include <vector>
+#include <unordered_map>
 #include <vk_types.h>
 
 #include <functional>
@@ -45,7 +46,20 @@ struct MeshPushConstants
     glm::vec4 data;
     glm::mat4 render_matrix;
 };
+struct Material
+{
+    VkPipeline pipeline;
+    VkPipelineLayout pipelineLayout;
+};
 
+struct RenderObject
+{
+    Mesh *mesh;
+
+    Material *material;
+
+    glm::mat4 transformMatrix;
+};
 class VulkanEngine
 {
   public:
@@ -99,7 +113,10 @@ class VulkanEngine
     VkPipeline _meshPipeline;
     Mesh _triangleMesh;
     Mesh _monkeyMesh;
-
+    //default array of renderable objects
+    std::vector<RenderObject> _renderables;
+    std::unordered_map<std::string, Material> _materials;
+    std::unordered_map<std::string, Mesh> _meshes;
     // loads a shader module from a spir-v file. Returns false if it errors
     bool
     load_shader_module(const char *filePath, VkShaderModule *outShaderModule);
@@ -113,6 +130,21 @@ class VulkanEngine
 
     struct SDL_Window *_window{nullptr};
 
+    //create material and add it to the map
+    Material *
+    create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string &name);
+
+    //returns nullptr if it can't be found
+    Material *
+    get_material(const std::string &name);
+
+    //returns nullptr if it can't be found
+    Mesh *
+    get_mesh(const std::string &name);
+
+    //our draw function
+    void
+    draw_objects(VkCommandBuffer cmd, RenderObject *first, int count);
 
     //cam struff
 
@@ -130,6 +162,8 @@ class VulkanEngine
     // initializes everything in the engine
     void
     init();
+    void
+    init_scene();
 
     // shuts down the engine
     void
