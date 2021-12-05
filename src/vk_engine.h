@@ -60,6 +60,37 @@ struct RenderObject
 
     glm::mat4 transformMatrix;
 };
+struct GPUCameraData
+{
+    glm::mat4 view;
+    glm::mat4 projection;
+    glm::mat4 viewproj;
+};
+struct FrameData
+{
+    VkSemaphore _presentSemaphore, _renderSemaphore;
+    VkFence _renderFence;
+
+    VkCommandPool _commandPool;
+    VkCommandBuffer _mainCommandBuffer;
+
+    //buffer that holds a single GPUCameraData to use when rendering
+    AllocatedBuffer cameraBuffer;
+
+    VkDescriptorSet globalDescriptor;
+};
+//number of frames to overlap when rendering
+constexpr unsigned int FRAME_OVERLAP = 2;
+
+struct GPUSceneData
+{
+    glm::vec4 fogColor;     // w is for exponent
+    glm::vec4 fogDistances; //x for min, y for max, zw unused.
+    glm::vec4 ambientColor;
+    glm::vec4 sunlightDirection; //w for sun power
+    glm::vec4 sunlightColor;
+};
+
 class VulkanEngine
 {
   public:
@@ -73,7 +104,10 @@ class VulkanEngine
     glm::vec3 camUp;
 
 
-    // --- omitted ---
+    // ---  ---
+    VkPhysicalDeviceProperties _gpuProperties;
+    VkDescriptorSetLayout _globalSetLayout;
+    VkDescriptorPool _descriptorPool;
     VkInstance _instance;                      // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger; // Vulkan debug output handle
     VkPhysicalDevice _chosenGPU;               // GPU chosen as the default device
@@ -81,6 +115,7 @@ class VulkanEngine
     VkSurfaceKHR _surface;                     // Vulkan window surface
                                                // --- other code ---
     VkSwapchainKHR _swapchain;                 // from other articles
+
 
     // image format expected by the windowing system
     VkFormat _swapchainImageFormat;
@@ -98,8 +133,8 @@ class VulkanEngine
     VkQueue _graphicsQueue;        // queue we will submit to
     uint32_t _graphicsQueueFamily; // family of that queue
 
-    VkCommandPool _commandPool;         // the command pool for our commands
-    VkCommandBuffer _mainCommandBuffer; // the buffer we will record into
+    //VkCommandPool _commandPool;         // the command pool for our commands
+    //VkCommandBuffer _mainCommandBuffer; // the buffer we will record into
 
     //--- other code ---
     VkRenderPass _renderPass;
@@ -107,9 +142,14 @@ class VulkanEngine
     std::vector<VkFramebuffer> _framebuffers;
 
     //--- other code ---
-    VkSemaphore _presentSemaphore, _renderSemaphore;
-    VkFence _renderFence;
-
+    //
+    //
+    GPUSceneData _sceneParameters;
+    AllocatedBuffer _sceneParameterBuffer;
+    //VkSemaphore _presentSemaphore, _renderSemaphore;
+    //VkFence _renderFence;
+    //frame storage
+    FrameData _frames[FRAME_OVERLAP];
     VkPipeline _meshPipeline;
     Mesh _triangleMesh;
     Mesh _monkeyMesh;
@@ -158,12 +198,17 @@ class VulkanEngine
     float
     clampYaw(float y);
 
+    AllocatedBuffer
+    create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+
 
     // initializes everything in the engine
     void
     init();
     void
     init_scene();
+    void
+    init_descriptors();
 
     // shuts down the engine
     void
@@ -178,7 +223,9 @@ class VulkanEngine
     run();
 
     // ... other stuff ....
-
+    //getter for the frame we are rendering to right now.
+    FrameData &
+    get_current_frame();
     VkPipelineLayout _trianglePipelineLayout;
     VkPipelineLayout _meshPipelineLayout;
 
@@ -207,7 +254,8 @@ class VulkanEngine
     init_sync_structures();
     void
     init_pipelines();
-
+    void
+    init_pipelinesOLD();
     void
     load_meshes();
 
