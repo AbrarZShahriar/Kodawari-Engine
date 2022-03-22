@@ -24,6 +24,12 @@
 #include <fstream>
 #include <iostream>
 
+#include "imgui.h"
+#include "imgui_impl_sdl.h"
+#include "imgui_impl_vulkan.h"
+
+
+
 // we want to immediately abort when there is an error. In normal engines this
 // would give an error message to the user, or perform a dump of state.
 using namespace std;
@@ -43,10 +49,12 @@ VulkanEngine::init()
     /*camXYZ[0] = 0.0;
     camXYZ[1] = -2;
     camXYZ[2] = 0.0;*/
-    camFront = glm::vec3(0.0f, 0.0f, 0.0f);
-    //camera pos
-    camPos = {0.0f, 0.0f, -2.0f};
+    
+  
+    camPos = glm::vec3(-10.0f, 9.0f, 3.0f);
 
+
+    camFront = glm::vec3(64.0f, -87.0f, 0.0f);
 
     //glm::vec3 camFront = glm::vec3(0.0f, 0.0f, 1.0f);
     camUp = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -71,37 +79,211 @@ VulkanEngine::init()
     init_descriptors();
     init_pipelines();
     load_meshes();
-    init_scene();
+    //init_scene();
+    init_imgui();
 
     // everything went fine
     _isInitialized = true;
 }
+
+void
+VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)> &&function)
+{
+    VkCommandBuffer cmd = _uploadContext._commandBuffer;
+
+    //begin the command buffer recording. We will use this command buffer exactly once before resetting, so we tell vulkan that
+    VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+    VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+    //execute the function
+    function(cmd);
+
+    VK_CHECK(vkEndCommandBuffer(cmd));
+
+    VkSubmitInfo submit = vkinit::submit_info(&cmd);
+
+
+    //submit command buffer to the queue and execute it.
+    // _uploadFence will now block until the graphic commands finish execution
+    VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, _uploadContext._uploadFence));
+
+    vkWaitForFences(_device, 1, &_uploadContext._uploadFence, true, 9999999999);
+    vkResetFences(_device, 1, &_uploadContext._uploadFence);
+
+    // reset the command buffers inside the command pool
+    vkResetCommandPool(_device, _uploadContext._commandPool, 0);
+}
+
+void
+VulkanEngine::init_imgui()
+{
+    //1: create descriptor pool for IMGUI
+    // the size of the pool is very oversize, but it's copied from imgui demo itself.
+    VkDescriptorPoolSize pool_sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+          {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+          {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+          {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+          {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+          {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}};
+
+    VkDescriptorPoolCreateInfo pool_info = {};
+    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    pool_info.maxSets = 1000;
+    pool_info.poolSizeCount = std::size(pool_sizes);
+    pool_info.pPoolSizes = pool_sizes;
+
+    VkDescriptorPool imguiPool;
+    VK_CHECK(vkCreateDescriptorPool(_device, &pool_info, nullptr, &imguiPool));
+
+
+    // 2: initialize imgui library
+
+    //this initializes the core structures of imgui
+    ImGui::CreateContext();
+
+    //this initializes imgui for SDL
+    ImGui_ImplSDL2_InitForVulkan(_window);
+
+    //this initializes imgui for Vulkan
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.Instance = _instance;
+    init_info.PhysicalDevice = _chosenGPU;
+    init_info.Device = _device;
+    init_info.Queue = _graphicsQueue;
+    init_info.DescriptorPool = imguiPool;
+    init_info.MinImageCount = 3;
+    init_info.ImageCount = 3;
+    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+    ImGui_ImplVulkan_Init(&init_info, _renderPass);
+
+    //execute a gpu command to upload imgui font textures
+    immediate_submit([&](VkCommandBuffer cmd) { ImGui_ImplVulkan_CreateFontsTexture(cmd); });
+
+    //clear font textures from cpu data
+    ImGui_ImplVulkan_DestroyFontUploadObjects();
+
+    //add the destroy the imgui created structures
+    _mainDeletionQueue.push_function([=]() {
+        vkDestroyDescriptorPool(_device, imguiPool, nullptr);
+        ImGui_ImplVulkan_Shutdown();
+    });
+}
+
 void
 VulkanEngine::init_scene()
 {
-    RenderObject monkey;
+   RenderObject monkey;
+   EntityMegastruct[0].EntityID=0;
+   EntityMegastruct[0].IsActive = false;
+   EntityMegastruct[0].IsPlayer = false;
+   EntityMegastruct[0].IsEnemy = false;
+   EntityMegastruct[0].IsFloor = false;
+   EntityMegastruct[0].IsTurret = true;
+
     monkey.mesh = get_mesh("monkey");
     monkey.material = get_material("defaultmesh");
-    monkey.transformMatrix = glm::mat4{1.0f};
+    
+    
+    EntityMegastruct[0].Movement.Position = glm::vec3(1.0f);
 
+    monkey.transformMatrix = glm::translate(glm::mat4{1.0}, EntityMegastruct[0].Movement.Position);
+
+
+    monkey.id = EntityMegastruct[0].EntityID;
     _renderables.push_back(monkey);
 
 
-    _renderables.push_back(monkey);
 
-    for(int x = -20; x <= 20; x++)
+    RenderObject floor;
+    EntityMegastruct[1].EntityID = 1;
+    EntityMegastruct[1].IsPlayer = false;
+    EntityMegastruct[1].IsActive = false;
+    EntityMegastruct[1].IsEnemy = false;
+    EntityMegastruct[1].IsFloor = true;
+    EntityMegastruct[1].IsTurret = false;
+    floor.mesh = get_mesh("triangle");
+    floor.material = get_material("defaultmesh");
+    glm::mat4 translationF = glm::translate(glm::mat4{1.0}, glm::vec3(1.0f, -1.0f, 1.0f));
+    glm::mat4 scaleF = glm::scale(glm::mat4{1.0}, glm::vec3(20, 20, 20));
+    glm::mat4 rotationF = glm::rotate(glm::mat4{1.0f}, glm::radians(90.f), glm::vec3(1, 0, 0));
+    
+    floor.transformMatrix = translationF * scaleF * rotationF ;
+    floor.id = EntityMegastruct[1].EntityID;
+    
+
+    _renderables.push_back(floor);
+
+
+    /// <summary>
+    /// 
+    //
+    /// </summary>
+    EntityMegastruct[2].EntityID = 2;
+    EntityMegastruct[2].IsActive = true;
+    EntityMegastruct[2].IsPlayer = true;
+    EntityMegastruct[2].IsEnemy = false;
+    EntityMegastruct[2].IsFloor = false;
+    EntityMegastruct[2].IsTurret = false;
+    controller_reset(&GameControllerPlayer);
+    EntityMegastruct[2].Controller = &GameControllerPlayer;
+    EntityMegastruct[2].Movement.Position = glm::vec3(1, 1, 1);
+    EntityMegastruct[2].Movement.Speed = 0.1f;
+
+    RenderObject triPlayer;
+    triPlayer.mesh = get_mesh("monkey");
+    triPlayer.material = get_material("redmesh");
+    glm::mat4 translation
+          = glm::translate(glm::mat4{1.0}, glm::vec3(EntityMegastruct[2].Movement.Position.x, EntityMegastruct[2].Movement.Position.z, EntityMegastruct[2].Movement.Position.y));
+    EntityMegastruct[2].Scale = glm::vec3(1, 1, 1);
+    glm::mat4 scale = glm::scale(glm::mat4{1.0}, EntityMegastruct[2].Scale);
+    triPlayer.transformMatrix = translation * scale;
+    triPlayer.id = EntityMegastruct[2].EntityID;
+
+    _renderables.push_back(triPlayer);
+
+    //Start from 3 as we already pushed some objs
+    int EnemyCount=3;
+    controller_reset(&GameControllerEnemy);
+    GameControllerEnemy.Left = 1;
+
+    for(int x = -10; x <= 10; x++)
     {
-        for(int y = -20; y <= 20; y++)
+        for(int y = 10; y <= 20; y++)
         {
-
+            if(y % 2 == 0 || x % 2 == 0)
+            {
+                continue;
+            }
             RenderObject tri;
-            tri.mesh = get_mesh("monkey");
-            tri.material = get_material("defaultmesh");
-            glm::mat4 translation = glm::translate(glm::mat4{1.0}, glm::vec3(x, 0, y));
-            glm::mat4 scale = glm::scale(glm::mat4{1.0}, glm::vec3(0.2, 0.2, 0.2));
-            tri.transformMatrix = translation * scale;
+            EntityMegastruct[EnemyCount].EntityID = EnemyCount;
+            EntityMegastruct[EnemyCount].HP = 100;
+            EntityMegastruct[EnemyCount].IsActive = true;
+            EntityMegastruct[EnemyCount].IsPlayer = false;
+            EntityMegastruct[EnemyCount].IsFloor = false;
+            EntityMegastruct[EnemyCount].IsEnemy = true;
+            EntityMegastruct[EnemyCount].IsTurret = false;
+            EntityMegastruct[EnemyCount].Controller = &GameControllerEnemy;
+            tri.mesh = get_mesh("triangle");
+            tri.material = get_material("redmesh");
+            EntityMegastruct[EnemyCount].Movement.Position = glm::vec3(x, 0, y);
+            EntityMegastruct[EnemyCount].Movement.Speed = 0.01f;
+            glm::mat4 translation = glm::translate(glm::mat4{1.0}, EntityMegastruct[EnemyCount].Movement.Position);
+            EntityMegastruct[EnemyCount].Scale = glm::vec3(0.2, 0.2, 0.2);
+            glm::mat4 scale = glm::scale(glm::mat4{1.0}, EntityMegastruct[EnemyCount].Scale);
+            
+            tri.transformMatrix = translation * scale ;
+            tri.id = EntityMegastruct[EnemyCount].EntityID;
 
             _renderables.push_back(tri);
+            EnemyCount++;
         }
     }
 }
@@ -342,6 +524,17 @@ VulkanEngine::init_commands()
 
         _mainDeletionQueue.push_function([=]() { vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr); });
     }
+
+    VkCommandPoolCreateInfo uploadCommandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily);
+    //create pool for upload context
+    VK_CHECK(vkCreateCommandPool(_device, &uploadCommandPoolInfo, nullptr, &_uploadContext._commandPool));
+
+    _mainDeletionQueue.push_function([=]() { vkDestroyCommandPool(_device, _uploadContext._commandPool, nullptr); });
+
+    //allocate the default command buffer that we will use for rendering
+    VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_uploadContext._commandPool, 1);
+
+    VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_uploadContext._commandBuffer));
 }
 
 void
@@ -489,15 +682,18 @@ VulkanEngine::init_sync_structures()
             vkDestroySemaphore(_device, _frames[i]._renderSemaphore, nullptr);
         });
     }
+    VkFenceCreateInfo uploadFenceCreateInfo = vkinit::fence_create_info();
+
+    VK_CHECK(vkCreateFence(_device, &uploadFenceCreateInfo, nullptr, &_uploadContext._uploadFence));
+    _mainDeletionQueue.push_function([=]() { vkDestroyFence(_device, _uploadContext._uploadFence, nullptr); });
 }
 
 void
 VulkanEngine::init_descriptors()
 {
 
-
-    //create a descriptor pool that will hold 10 uniform buffers
-    std::vector<VkDescriptorPoolSize> sizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10}};
+//create a descriptor pool that will hold 10 uniform buffers and 10 dynamic uniform buffers
+    std::vector<VkDescriptorPoolSize> sizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 10}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10}};
 
     VkDescriptorPoolCreateInfo pool_info = {};
     pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -508,34 +704,75 @@ VulkanEngine::init_descriptors()
 
     vkCreateDescriptorPool(_device, &pool_info, nullptr, &_descriptorPool);
 
-    //information about the binding.
-    VkDescriptorSetLayoutBinding camBufferBinding = {};
-    camBufferBinding.binding = 0;
-    camBufferBinding.descriptorCount = 1;
-    // it's a uniform buffer binding
-    camBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    //binding for camera data at 0
+    VkDescriptorSetLayoutBinding cameraBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
 
-    // we use it from the vertex shader
-    camBufferBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    //binding for scene data at 1
+    VkDescriptorSetLayoutBinding sceneBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+
+    VkDescriptorSetLayoutBinding bindings[] = {cameraBind, sceneBind};
+
+    VkDescriptorSetLayoutCreateInfo setinfo = {};
+    setinfo.bindingCount = 2;
+    setinfo.flags = 0;
+    setinfo.pNext = nullptr;
+    setinfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    setinfo.pBindings = bindings;
+
+    //
+    //
+    VkDescriptorSetLayoutBinding objectBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+
+    VkDescriptorSetLayoutCreateInfo set2info = {};
+    set2info.bindingCount = 1;
+    set2info.flags = 0;
+    set2info.pNext = nullptr;
+    set2info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    set2info.pBindings = &objectBind;
+
+    vkCreateDescriptorSetLayout(_device, &set2info, nullptr, &_objectSetLayout);
+    //
+    //
 
 
-    VkDescriptorSetLayoutCreateInfo setInfo = {};
-    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    setInfo.pNext = nullptr;
+    vkCreateDescriptorSetLayout(_device, &setinfo, nullptr, &_globalSetLayout);
+    
 
-    //we are going to have 1 binding
-    setInfo.bindingCount = 1;
-    //no flags
-    setInfo.flags = 0;
-    //point to the camera buffer binding
-    setInfo.pBindings = &camBufferBinding;
+    ////information about the binding.
+    //VkDescriptorSetLayoutBinding camBufferBinding = {};
+    //camBufferBinding.binding = 0;
+    //camBufferBinding.descriptorCount = 1;
+    //// it's a uniform buffer binding
+    //camBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
-    vkCreateDescriptorSetLayout(_device, &setInfo, nullptr, &_globalSetLayout);
+    //// we use it from the vertex shader
+    //camBufferBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+
+    //VkDescriptorSetLayoutCreateInfo setInfo = {};
+    //setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    //setInfo.pNext = nullptr;
+
+    ////we are going to have 1 binding
+    //setInfo.bindingCount = 1;
+    ////no flags
+    //setInfo.flags = 0;
+    ////point to the camera buffer binding
+    //setInfo.pBindings = &camBufferBinding;
+
+  
+
+    const size_t sceneParamBufferSize = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUSceneData));
+
+    _sceneParameterBuffer = create_buffer(sceneParamBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
     for(int i = 0; i < FRAME_OVERLAP; i++)
     {
         _frames[i].cameraBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
+        const int MAX_OBJECTS = 10000;
+        _frames[i].objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        
         //allocate one descriptor set for each frame
         VkDescriptorSetAllocateInfo allocInfo = {};
         allocInfo.pNext = nullptr;
@@ -549,37 +786,74 @@ VulkanEngine::init_descriptors()
 
         vkAllocateDescriptorSets(_device, &allocInfo, &_frames[i].globalDescriptor);
 
-        //information about the buffer we want to point at in the descriptor
-        VkDescriptorBufferInfo binfo;
-        //it will be the camera buffer
-        binfo.buffer = _frames[i].cameraBuffer._buffer;
-        //at 0 offset
-        binfo.offset = 0;
-        //of the size of a camera data struct
-        binfo.range = sizeof(GPUCameraData);
+        //
+        //allocate the descriptor set that will point to object buffer
+        VkDescriptorSetAllocateInfo objectSetAlloc = {};
+        objectSetAlloc.pNext = nullptr;
+        objectSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        objectSetAlloc.descriptorPool = _descriptorPool;
+        objectSetAlloc.descriptorSetCount = 1;
+        objectSetAlloc.pSetLayouts = &_objectSetLayout;
 
-        VkWriteDescriptorSet setWrite = {};
-        setWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        setWrite.pNext = nullptr;
+        vkAllocateDescriptorSets(_device, &objectSetAlloc, &_frames[i].objectDescriptor);
+        //
+        //
 
-        //we are going to write into binding number 0
-        setWrite.dstBinding = 0;
-        //of the global descriptor
-        setWrite.dstSet = _frames[i].globalDescriptor;
+        
 
-        setWrite.descriptorCount = 1;
-        //and the type is uniform buffer
-        setWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        setWrite.pBufferInfo = &binfo;
+        VkDescriptorBufferInfo cameraInfo;
+        cameraInfo.buffer = _frames[i].cameraBuffer._buffer;
+        cameraInfo.offset = 0;
+        cameraInfo.range = sizeof(GPUCameraData);
+
+        VkDescriptorBufferInfo sceneInfo;
+        sceneInfo.buffer = _sceneParameterBuffer._buffer;
+        sceneInfo.offset = 0; //pad_uniform_buffer_size(sizeof(GPUSceneData)) * i;
+        sceneInfo.range = sizeof(GPUSceneData);
+
+        //
+        //		
+        VkDescriptorBufferInfo objectBufferInfo;
+        objectBufferInfo.buffer = _frames[i].objectBuffer._buffer;
+        objectBufferInfo.offset = 0;
+        objectBufferInfo.range = sizeof(GPUObjectData) * MAX_OBJECTS;
+        //
+        //
+
+        VkWriteDescriptorSet cameraWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _frames[i].globalDescriptor, &cameraInfo, 0);
+
+        VkWriteDescriptorSet sceneWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, _frames[i].globalDescriptor, &sceneInfo, 1);
+
+        VkWriteDescriptorSet objectWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _frames[i].objectDescriptor, &objectBufferInfo, 0);
 
 
-        vkUpdateDescriptorSets(_device, 1, &setWrite, 0, nullptr);
+      	VkWriteDescriptorSet setWrites[] = {cameraWrite, sceneWrite, objectWrite};
+        
+
+        vkUpdateDescriptorSets(_device, 3, setWrites, 0, nullptr);
     }
+    // add descriptor set layout to deletion queues
+    _mainDeletionQueue.push_function([&]() {
+        vmaDestroyBuffer(_allocator, _sceneParameterBuffer._buffer, _sceneParameterBuffer._allocation);
+        vkDestroyDescriptorSetLayout(_device, _globalSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _objectSetLayout, nullptr);
+        vkDestroyDescriptorPool(_device, _descriptorPool, nullptr);
+        
+        for(int i = 0; i < FRAME_OVERLAP; i++)
+        {
+            vmaDestroyBuffer(_allocator, _frames[i].cameraBuffer._buffer, _frames[i].cameraBuffer._allocation);
+
+            vmaDestroyBuffer(_allocator, _frames[i].objectBuffer._buffer, _frames[i].objectBuffer._allocation);
+
+            
+        }
+    });
 }
 
 void
 VulkanEngine::draw()
 {
+    ImGui::Render();
     // wait until the GPU has finished rendering the last frame. Timeout of 1
     // second
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
@@ -640,6 +914,12 @@ VulkanEngine::draw()
     // once we start adding rendering commands, they will go here
 
     draw_objects(cmd, _renderables.data(), _renderables.size());
+
+    //
+    // 
+    // 
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+
 
 
     // finalize the render pass
@@ -947,7 +1227,12 @@ void
 VulkanEngine::init_pipelines()
 {
     VkShaderModule colorMeshShader;
-    if(!load_shader_module("../../shaders/colored_triangle.frag.spv", &colorMeshShader))
+    if(!load_shader_module("../../shaders/default_lit.frag.spv", &colorMeshShader))
+    {
+        std::cout << "Error when building the colored mesh shader" << std::endl;
+    }
+    VkShaderModule colorMeshShader2;
+    if(!load_shader_module("../../shaders/triangle.frag.spv", &colorMeshShader2))
     {
         std::cout << "Error when building the colored mesh shader" << std::endl;
     }
@@ -965,6 +1250,8 @@ VulkanEngine::init_pipelines()
     pipelineBuilder._shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
 
     pipelineBuilder._shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, colorMeshShader));
+   
+
 
 
     //we start from just the default empty pipeline layout info
@@ -982,11 +1269,16 @@ VulkanEngine::init_pipelines()
     mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
     mesh_pipeline_layout_info.pushConstantRangeCount = 1;
 
-    //VkDescriptorSetLayout setLayouts[] = {_globalSetLayout, _objectSetLayout};
+    //
+    //
+    VkDescriptorSetLayout setLayouts[] = {_globalSetLayout, _objectSetLayout};
+    //
+    //
+
 
     //hook the global set layout
-    mesh_pipeline_layout_info.setLayoutCount = 1;
-    mesh_pipeline_layout_info.pSetLayouts = &_globalSetLayout;
+    mesh_pipeline_layout_info.setLayoutCount = 2;
+    mesh_pipeline_layout_info.pSetLayouts = setLayouts;
 
     VkPipelineLayout meshPipLayout;
     VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr, &meshPipLayout));
@@ -1042,8 +1334,19 @@ VulkanEngine::init_pipelines()
 
     create_material(meshPipeline, meshPipLayout, "defaultmesh");
 
+    // clear the shader stages for the builder
+    pipelineBuilder._shaderStages.clear();
+
+    // add the other shaders
+    pipelineBuilder._shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
+
+    pipelineBuilder._shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, colorMeshShader2));
+    _trianglePipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+    create_material(_trianglePipeline, meshPipLayout, "redmesh");
+
     vkDestroyShaderModule(_device, meshVertShader, nullptr);
     vkDestroyShaderModule(_device, colorMeshShader, nullptr);
+    vkDestroyShaderModule(_device, colorMeshShader2, nullptr);
 
     _mainDeletionQueue.push_function([=]() {
         vkDestroyPipeline(_device, meshPipeline, nullptr);
@@ -1113,6 +1416,23 @@ PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)
         return newPipeline;
     }
 }
+
+size_t
+VulkanEngine::pad_uniform_buffer_size(size_t originalSize)
+{
+    /*
+    Thanks to Sascha Willems and his Vulkan samples for the snippet. https://github.com/SaschaWillems/Vulkan/tree/master/examples/dynamicuniformbuffer
+    */
+    // Calculate required alignment based on minimum device offset alignment
+    size_t minUboAlignment = _gpuProperties.limits.minUniformBufferOffsetAlignment;
+    size_t alignedSize = originalSize;
+    if(minUboAlignment > 0)
+    {
+        alignedSize = (alignedSize + minUboAlignment - 1) & ~(minUboAlignment - 1);
+    }
+    return alignedSize;
+}
+
 
 glm::vec3
 VulkanEngine::polarVector(float p, float y)
@@ -1198,6 +1518,168 @@ VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first, int count)
 
     vmaUnmapMemory(_allocator, get_current_frame().cameraBuffer._allocation);
 
+    float framed = (_frameNumber / 120.f);
+
+    _sceneParameters.ambientColor = {sin(framed), 0, cos(framed), 1};
+
+    char *sceneData;
+    vmaMapMemory(_allocator, _sceneParameterBuffer._allocation, (void **)&sceneData);
+
+    int frameIndex = _frameNumber % FRAME_OVERLAP;
+
+    sceneData += pad_uniform_buffer_size(sizeof(GPUSceneData)) * frameIndex;
+
+    memcpy(sceneData, &_sceneParameters, sizeof(GPUSceneData));
+
+    vmaUnmapMemory(_allocator, _sceneParameterBuffer._allocation);
+
+    void *objectData;
+    vmaMapMemory(_allocator, get_current_frame().objectBuffer._allocation, &objectData);
+
+    GPUObjectData *objectSSBO = (GPUObjectData *)objectData;
+    glm::mat4 rot = glm::rotate(glm::mat4{1.0f}, glm::radians(_frameNumber * 0.4f), glm::vec3(0, 1, 0));
+
+    for(int i = 0; i < count; i++)
+    {
+        RenderObject &object = first[i];
+        //Current Entity
+        entity_megastruct *CurrentEntity = &EntityMegastruct[i];
+        
+        //check if enemy
+        if(CurrentEntity->IsEnemy)
+        {
+           
+            
+            move_entity_0(CurrentEntity);
+          
+            glm::mat4 translationF = glm::translate(glm::mat4{1.0}, glm::vec3(CurrentEntity->Movement.Position.x, CurrentEntity->Movement.Position.y, CurrentEntity->Movement.Position.z));
+            glm::mat4 scaleF = glm::scale(glm::mat4{1.0}, CurrentEntity->Scale);
+            glm::mat4 rotationF = glm::rotate(glm::mat4{1.0f}, glm::radians(90.f), glm::vec3(1, 0, 0));
+            if(CurrentEntity->HP<0)
+            {
+                CurrentEntity->IsActive = false;
+                CurrentEntity->Movement.Position = glm::vec3(10000, 10000, 10000);
+                CurrentEntity->Movement.Speed = 0;
+
+
+            }
+
+            objectSSBO[i].modelMatrix = translationF * scaleF * rotationF;
+            
+                  
+            
+
+        }
+        //check if player
+        if(CurrentEntity->IsPlayer)
+        {
+            move_entity_0(CurrentEntity);
+
+            glm::mat4 translationF = glm::translate(glm::mat4{1.0}, glm::vec3(CurrentEntity->Movement.Position.x, CurrentEntity->Movement.Position.y, CurrentEntity->Movement.Position.z));
+            glm::mat4 scaleF = glm::scale(glm::mat4{1.0}, CurrentEntity->Scale);
+            glm::mat4 rotationF = glm::rotate(glm::mat4{1.0f}, glm::radians(90.f), glm::vec3(1, 0, 0));
+
+            objectSSBO[i].modelMatrix = translationF * scaleF * rotationF;
+        }
+        //check if floor
+        if(CurrentEntity->IsFloor)
+        {
+            //move_entity_0(CurrentEntity); //floor does not move
+            objectSSBO[i].modelMatrix = object.transformMatrix;
+        }
+        
+        //check if turret
+        if(CurrentEntity->IsTurret)
+        {
+            //move_entity_0(CurrentEntity); //floor does not move
+            glm::mat4 transformation = object.transformMatrix;
+            //for each enemy
+            for(int e = 0; e < count; e++)
+            {
+                entity_megastruct *EnemyEntity = &EntityMegastruct[e];
+                if(EnemyEntity->IsEnemy)
+                {
+                    if(EnemyEntity->IsActive)
+                    {
+                        
+                        float distance = glm::length(EnemyEntity->Movement.Position - CurrentEntity->Movement.Position);
+                        
+                            glm::vec3 Current = glm::normalize(glm::vec3(1, 1, 5) - CurrentEntity->Movement.Position);
+                            glm::vec3 Target = glm::normalize(EnemyEntity->Movement.Position - CurrentEntity->Movement.Position);
+                            float rot = glm::dot(Current, Target);
+
+
+                            glm::mat4 translationF
+                                  = glm::translate(glm::mat4{1.0}, glm::vec3(CurrentEntity->Movement.Position.x, CurrentEntity->Movement.Position.y, CurrentEntity->Movement.Position.z));
+                            glm::mat4 rotationF = glm::rotate(glm::mat4{1.0f}, rot + 0.193412f, glm::vec3(0, 1, 0));
+
+                            transformation = translationF * rotationF;
+                            EnemyEntity->HP -= 10;
+
+                            break;
+
+                       
+                            
+                          
+                         
+               
+
+
+                    }
+
+                }
+               
+                
+                
+                
+
+               
+
+            }
+            objectSSBO[i].modelMatrix = transformation;
+            
+        }
+
+        
+        
+        //if (object.id==2)
+        //{
+        //    objectSSBO[i].modelMatrix = object.transformMatrix * rot;
+        //}
+        //else
+        //{
+        //    objectSSBO[i].modelMatrix = object.transformMatrix;
+        //}
+
+        //PlayerControlled
+        //if(object.id == 3)
+        //{
+        //    move_entity_0(&EntityMegastruct[i]);
+
+        //   /* object.transformMatrix
+        //          = glm::translate(glm::mat4{1.0}, glm::vec3(EntityMegastruct[0].Movement.Position.x, EntityMegastruct[0].Movement.Position.z, EntityMegastruct[0].Movement.Position.y));*/
+        //    objectSSBO[i].modelMatrix
+        //          = glm::translate(glm::mat4{1.0}, glm::vec3(EntityMegastruct[0].Movement.Position.x, EntityMegastruct[0].Movement.Position.y, EntityMegastruct[0].Movement.Position.z));
+        //    
+        //}
+        ////EnemyControlled
+        //if(object.id == 4)
+        //{
+        //    
+        //    move_entity_0(&EntityMegastruct[i]);
+
+        //    /* object.transformMatrix
+        //          = glm::translate(glm::mat4{1.0}, glm::vec3(EntityMegastruct[0].Movement.Position.x, EntityMegastruct[0].Movement.Position.z, EntityMegastruct[0].Movement.Position.y));*/
+        //    objectSSBO[i].modelMatrix
+        //          = glm::translate(glm::mat4{1.0}, glm::vec3(EntityMegastruct[1].Movement.Position.x, EntityMegastruct[0].Movement.Position.y, EntityMegastruct[0].Movement.Position.z));
+        //}
+    }
+    
+
+
+    vmaUnmapMemory(_allocator, get_current_frame().objectBuffer._allocation);
+
+
     Mesh *lastMesh = nullptr;
     Material *lastMaterial = nullptr;
     for(int i = 0; i < count; i++)
@@ -1211,17 +1693,24 @@ VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first, int count)
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipeline);
             lastMaterial = object.material;
+            //offset for our scene buffer
+            uint32_t uniform_offset = pad_uniform_buffer_size(sizeof(GPUSceneData)) * frameIndex;
             //bind the descriptor set when changing pipeline
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 0, nullptr);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 0, &uniform_offset);
+            
+            //object data descriptor
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &get_current_frame().objectDescriptor, 0, nullptr);
         }
 
 
-        //glm::mat4 model = object.transformMatrix;
-        ////final render matrix, that we are calculating on the cpu
-        //glm::mat4 mesh_matrix = projection * view * model;
+        glm::mat4 model = object.transformMatrix;
+        //final render matrix, that we are calculating on the cpu
+        glm::mat4 rot=glm::rotate(glm::mat4{1.0f}, glm::radians(_frameNumber * 0.4f), glm::vec3(0, 1, 0));
+        glm::mat4 mesh_matrix = model*rot;
 
         MeshPushConstants constants;
-        constants.render_matrix = object.transformMatrix;
+        constants.render_matrix = mesh_matrix;
+       
 
         //upload the mesh to the GPU via push constants
         vkCmdPushConstants(cmd, object.material->pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
@@ -1235,7 +1724,7 @@ VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first, int count)
             lastMesh = object.mesh;
         }
         //we can now draw
-        vkCmdDraw(cmd, object.mesh->_vertices.size(), 1, 0, 0);
+        vkCmdDraw(cmd, object.mesh->_vertices.size(), 1, 0, i);
     }
 }
 void
@@ -1253,7 +1742,7 @@ VulkanEngine::run()
 #define RESET_MOUSE SDL_WarpMouseInWindow(_window, CTR_X, CTR_Y)
 
     // call once at the start
-    RESET_MOUSE;
+    //RESET_MOUSE;
 
     // keep outside the loop
     float pitch = 0.0f, yaw = 0.0f;
@@ -1269,7 +1758,7 @@ VulkanEngine::run()
         while(SDL_PollEvent(&e) != 0)
         {
 
-
+            ImGui_ImplSDL2_ProcessEvent(&e);
             // close the window when user alt-f4s or clicks the X button
             if(e.type == SDL_QUIT)
             {
@@ -1287,20 +1776,20 @@ VulkanEngine::run()
                 }
             }
 
-            if(e.type == SDL_MOUSEMOTION)
-            {
-                float deltaX = (float)e.motion.x - CTR_X;
-                float deltaY = (float)e.motion.y - CTR_Y;
+            //if(e.type == SDL_MOUSEMOTION)
+            //{
+            //    float deltaX = (float)e.motion.x - CTR_X;
+            //    float deltaY = (float)e.motion.y - CTR_Y;
 
-                yaw = clampYaw(yaw + sensitivity * deltaX);
-                pitch = clampPitch(pitch - sensitivity * deltaY);
+            //    yaw = clampYaw(yaw + sensitivity * deltaX);
+            //    pitch = clampPitch(pitch - sensitivity * deltaY);
 
-                // assumes radians input
-                camFront = polarVector(glm::radians(pitch), glm::radians(yaw));
+            //    // assumes radians input
+            //    camFront = polarVector(glm::radians(pitch), glm::radians(yaw));
 
-                // reset *every time*
-                RESET_MOUSE;
-            }
+            //    // reset *every time*
+            //    //RESET_MOUSE;
+            //}
 
             //    // move cam
             //    if(e.type == SDL_KEYDOWN)
@@ -1325,24 +1814,129 @@ VulkanEngine::run()
             //    }
         }
         const Uint8 *keystate = SDL_GetKeyboardState(NULL);
+        
+        controller_reset(&GameControllerPlayer);
 
         if(keystate[SDL_SCANCODE_A])
         {
-            camPos -= glm::normalize(glm::cross(camFront, camUp)) * cameraSpeed;
+            //camPos -= glm::normalize(glm::cross(camFront, camUp)) * cameraSpeed;
+            GameControllerPlayer.Left = 1;
         }
+   
         if(keystate[SDL_SCANCODE_D])
         {
-            camPos += glm::normalize(glm::cross(camFront, camUp)) * cameraSpeed;
+           // camPos += glm::normalize(glm::cross(camFront, camUp)) * cameraSpeed;
+            //GameControllerPlayer.Right = 1;
+            GameControllerPlayer.Left = -1;
         }
         if(keystate[SDL_SCANCODE_W])
         {
-            camPos += cameraSpeed * camFront;
+          //  camPos += cameraSpeed * camFront;
+            GameControllerPlayer.Up = 1;
         }
         if(keystate[SDL_SCANCODE_S])
         {
-            camPos -= cameraSpeed * camFront;
+            //GameControllerPlayer.Down = 1;
+             GameControllerPlayer.Up = -1;
+          //  camPos -= cameraSpeed * camFront;
         }
 
+        
+        //imgui new frame
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplSDL2_NewFrame(_window);
+
+        ImGui::NewFrame();
+
+
+        //imgui commands
+        // render your GUI
+        
+        ImGui::Begin("Demo window");
+        ImGui::Button("Hello!");
+
+        ImGui::DragFloat("CamPos X drag float3", &camPos.x);
+        ImGui::DragFloat("CamPos Y drag float3", &camPos.y);
+        ImGui::DragFloat("CamPos Z drag float3", &camPos.z);
+
+
+        ImGui::DragFloat("CamFront X drag float3", &camFront.x);
+        ImGui::DragFloat("CamFront Y drag float3", &camFront.y);
+        ImGui::DragFloat("CamFront Z drag float3", &camFront.z);
+
+
+
+        ImGui::DragFloat("EntityMegastructt X drag float", &EntityMegastruct[2].Movement.Position.x);
+        ImGui::DragFloat("EntityMegastruct Y drag float", &EntityMegastruct[2].Movement.Position.y);
+        ImGui::DragFloat("EntityMegastruct Z drag float", &EntityMegastruct[2].Movement.Position.z);
+        ImGui::End();
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing
+              | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
+        
+
+        if(GameState.Running)
+        {
+            bool pOpen;
+
+            ImGui::SetNextWindowPos(ImVec2(0, 0));
+            ImGui::SetNextWindowSize(ImVec2(180, 80));
+            ImGui::SetNextWindowBgAlpha(0.0f);
+            ImGui::Begin("Score", &pOpen, window_flags);
+            ImGui::Text("Score-%d", GameState.Score);
+            GameState.Score++;
+
+       
+
+            ImGui::End();
+        }
+        if(GameState.StartMenu)
+        {
+        
+        ImGui::SetNextWindowPos(ImVec2(500, 500));
+        ImGui::SetNextWindowSize(ImVec2(180, 180));
+        ImGui::Begin("Menu");
+       
+        
+        if(ImGui::Button("Start!"))
+        {
+            GameState.StartMenu=false;
+            GameState.Running = true;
+            init_scene();
+      
+        }
+        
+        ImGui::End();
+        }
+
+
+         /// <summary>
+         /// if Victory
+         /// </summary>
+         if(GameState.Score>2000)
+        {
+             GameState.StartMenu = false;
+             GameState.Running = false;
+
+            ImGui::SetNextWindowPos(ImVec2(500, 500));
+            ImGui::SetNextWindowSize(ImVec2(180, 180));
+            ImGui::Begin("Victory!");
+
+
+            if(ImGui::Button("Start Again!"))
+            {
+                GameState.Score = 0;
+                GameState.StartMenu = false;
+                GameState.Running = true;
+                init_scene();
+            }
+
+            ImGui::End();
+        }
+
+        //ImGui::ShowDemoWindow();
+
         draw();
+        
+         
     }
 }

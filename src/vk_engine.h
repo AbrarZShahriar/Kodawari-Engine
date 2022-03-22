@@ -12,9 +12,12 @@
 #include <deque>
 #include <vk_mesh.h>
 
+#include <tower_defense.h>
+
 //add the include for glm to get matrices
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
+
 
 
 struct DeletionQueue
@@ -37,9 +40,16 @@ struct DeletionQueue
         }
 
         deletors.clear();
+
+
     }
 };
-
+struct UploadContext
+{
+    VkFence _uploadFence;
+    VkCommandPool _commandPool;
+    VkCommandBuffer _commandBuffer;
+};
 
 struct MeshPushConstants
 {
@@ -59,6 +69,11 @@ struct RenderObject
     Material *material;
 
     glm::mat4 transformMatrix;
+
+    int id=0;
+    
+
+
 };
 struct GPUCameraData
 {
@@ -78,6 +93,13 @@ struct FrameData
     AllocatedBuffer cameraBuffer;
 
     VkDescriptorSet globalDescriptor;
+    AllocatedBuffer objectBuffer;
+    VkDescriptorSet objectDescriptor;
+};
+
+struct GPUObjectData
+{
+    glm::mat4 modelMatrix;
 };
 //number of frames to overlap when rendering
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -90,23 +112,35 @@ struct GPUSceneData
     glm::vec4 sunlightDirection; //w for sun power
     glm::vec4 sunlightColor;
 };
-
 class VulkanEngine
 {
   public:
+    entity_megastruct EntityMegastruct[1000];
+    game_controller GameControllerPlayer;
+    game_controller GameControllerEnemy;
+    game_state GameState;
+   
+
+    UploadContext _uploadContext;
+
+    void
+    immediate_submit(std::function<void(VkCommandBuffer cmd)> &&function);
+
     float camXYZ[3];
-    glm::vec3 camFront;
+    //glm::vec3 camFront;
     //camera pos
-    glm::vec3 camPos;
+    glm::vec3 camPos = glm::vec3(-10.0f, 9.0f, 3.0f);
+    
 
 
-    //glm::vec3 camFront = glm::vec3(0.0f, 0.0f, 1.0f);
+    glm::vec3 camFront = glm::vec3(64.0f, -87.0f, 0.0f);
     glm::vec3 camUp;
 
 
     // ---  ---
     VkPhysicalDeviceProperties _gpuProperties;
     VkDescriptorSetLayout _globalSetLayout;
+    VkDescriptorSetLayout _objectSetLayout;
     VkDescriptorPool _descriptorPool;
     VkInstance _instance;                      // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger; // Vulkan debug output handle
@@ -188,6 +222,9 @@ class VulkanEngine
 
     //cam struff
 
+    size_t
+    pad_uniform_buffer_size(size_t originalSize);
+
     glm::vec3
     polarVector(float p, float y);
 
@@ -205,6 +242,8 @@ class VulkanEngine
     // initializes everything in the engine
     void
     init();
+    void
+    init_imgui();
     void
     init_scene();
     void

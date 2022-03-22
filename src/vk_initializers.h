@@ -39,4 +39,19 @@ imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectF
 VkPipelineDepthStencilStateCreateInfo
 depth_stencil_create_info(bool bDepthTest, bool bDepthWrite, VkCompareOp compareOp);
 
+VkDescriptorSetLayoutBinding
+descriptorset_layout_binding(VkDescriptorType type, VkShaderStageFlags stageFlags, uint32_t binding);
+
+VkWriteDescriptorSet
+write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorBufferInfo *bufferInfo, uint32_t binding);
+
+VkFenceCreateInfo
+fence_create_info(VkFenceCreateFlags flags = 0);
+
+
+VkCommandBufferBeginInfo
+command_buffer_begin_info(VkCommandBufferUsageFlags flags = 0);
+VkSubmitInfo
+submit_info(VkCommandBuffer *cmd);
+
 } // namespace vkinit
