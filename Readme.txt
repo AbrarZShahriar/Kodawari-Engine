@@ -24,9 +24,9 @@ and HMH's sparse entity system - https://www.youtube.com/watch?v=wqpxe-s9xyw but
 
 
 Todo-
-Add homing projectiles. 
+Homing projectiles. 
 Complete Tower placement grid.
-Add Textures.
+Textures.
 Particles.
 Threadpools https://github.com/bshoshany/thread-pool
 
