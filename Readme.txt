@@ -13,6 +13,8 @@ No textures as I haven't finished that part of the tutorial yet.
 
 Current only has 1 tower. 
 
+Victory condition- Score goes over 2000. Lose condition- Not yet inplemented.
+
 WASD moves the tower placement cursor.
 
 I tried to do something like "megastructs" by Ryan F(https://twitter.com/ryanjfleury) -https://www.youtube.com/watch?v=UolgW-Ff4bA
