@@ -30,6 +30,8 @@ Textures.
 Particles.
 Threadpools https://github.com/bshoshany/thread-pool
 
+Will switch to Kohi tutorial series for a more hands on approch to Vulkan engines https://www.youtube.com/watch?v=dHPuU-DJoBM&list=PLv8Ddw9K0JPg1BEO-RS-0MYs423cvLVtj
+
 
 
 
