@@ -6,7 +6,7 @@ enter cmake -S ../ -B .
 copy /third_party/SDL2-devel-2.0.20-VC/SDL2-2.0.20/lib/x64/SDL2.dll copy and paste beside the .exe after compilation.
 
 
-Based on https://vkguide.dev/ vulkan tutorial. \
+Based on https://vkguide.dev/ vulkan tutorial. Did not add submodules as vkguide already had many things vendored in.
 
 No textures as I haven't finished that part of the tutorial yet.
 
